@@ -710,6 +710,308 @@ ENTONCES:
 
 ```
 ---
+```
+======================================================================
+                     ZANKORA - HOW TO EXTEND
+           Extender el sistema (Plugins, Tools, Canales)
+======================================================================
+
+OBJETIVO
+--------
+Agregar capacidades SIN modificar el core:
+  - Nuevas TOOLS (acciones)
+  - Nuevos CANALES (adapters)
+  - Nuevas INTEGRACIONES (APIs externas)
+  - (Opcional) Nuevo MOTOR de agente
+
+
+======================================================================
+1) EXTENDER CON PLUGINS (FORMA RECOMENDADA)
+======================================================================
+
+Zankora carga plugins desde:
+  AGW_PLUGIN_DIR=./plugins
+
+En startup, el gateway:
+  - Escanea directorio
+  - Importa módulos Python
+  - Ejecuta register(registry)
+
+CONVENCION MINIMA
+-----------------
+Estructura típica:
+
+  plugins/
+    my_plugin/
+      __init__.py
+      plugin.py
+
+El archivo plugin.py debe exponer:
+  def register(registry): ...
+
+NOTA:
+  - El core debe permanecer igual.
+  - El plugin sólo registra cosas (tools, etc.).
+
+
+======================================================================
+2) AGREGAR UNA TOOL (ACCION) VIA PLUGIN
+======================================================================
+
+CASO DE USO
+-----------
+Quieres que el agente pueda llamar una acción:
+  - "crm.search_customer"
+  - "tickets.create"
+  - "inventory.get_stock"
+  - "core.summarize"
+  - etc.
+
+PASOS
+-----
+A) Crear plugin
+B) Registrar la tool en register(...)
+C) Definir permisos (read/write)
+D) (Importante) Permitirla en policy/allowlist
+
+EJEMPLO (PLUGIN TOOL READ)
+--------------------------
+Archivo: plugins/acme_tools/plugin.py
+
+  - Registra una tool "acme.uppercase"
+  - Permiso: READ (no requiere approval)
+
+PSEUDOCODIGO:
+
+  from gateway.plugins.registry import PluginRegistry
+  from gateway.domain.models import ToolSpec, ToolPermission
+
+  async def uppercase(text: str) -> dict:
+      return {"result": text.upper()}
+
+  def register(registry: PluginRegistry) -> None:
+      registry.register_tool(
+          ToolSpec(
+              name="acme.uppercase",
+              description="Convert text to uppercase",
+              permission=ToolPermission.read,
+              func=uppercase,
+              parameters={
+                  "text": {"type":"string","description":"Text to convert"}
+              }
+          )
+      )
+
+TOOL WRITE + APPROVAL (RECOMENDADO)
+-----------------------------------
+Si la tool hace cambios (WRITE):
+  - permission = write
+  - Zankora puede bloquear hasta aprobación humana
+
+Ejemplo:
+  name="tickets.create"
+  permission=ToolPermission.write
+
+RESULTADO:
+  - Si policy requiere approvals para write tools:
+      evt:approval.required
+  - Luego operador aprueba:
+      zankora approve <run_id>
+
+
+======================================================================
+3) HABILITAR LA TOOL (POLICY / ALLOWLIST)
+======================================================================
+
+POR QUE
+-------
+Zankora es deny-by-default: una tool nueva NO debería ejecutarse
+si no está explicitamente permitida.
+
+QUE HACER
+---------
+A) Permitir tool por configuración dinámica (si existe config-set)
+B) O agregarla al archivo de policy/config en el core (según diseño)
+
+EJEMPLO LOGICO
+--------------
+Permitir:
+  - acme.uppercase = true
+
+Y para write:
+  - tickets.create = true
+  - approvals requeridas = true
+
+CHECKLIST DE SEGURIDAD
+----------------------
+[ ] Tool con nombre namespace claro (company.feature.action)
+[ ] Permisos correctos (read vs write)
+[ ] Validación de parámetros (tipos, largo, defaults)
+[ ] Sanitización de outputs (no filtrar secretos)
+[ ] Manejo de errores (no reventar el loop principal)
+[ ] Observabilidad: log + eventos relevantes
+
+
+======================================================================
+4) EXTENDER CON UN NUEVO CANAL (ADAPTER)
+======================================================================
+
+CASO DE USO
+-----------
+Quieres integrar un canal nuevo:
+  - Slack
+  - Discord
+  - Email
+  - MS Teams
+  - Webhook genérico
+
+PATRON
+------
+Un canal en Zankora es un adapter que:
+  - Recibe mensajes externos
+  - Normaliza a evento inbound
+  - Envía outbound (respuestas) al canal
+
+DONDE MIRAR
+-----------
+  gateway/channels/base.py          (contrato)
+  gateway/channels/webchat.py       (ejemplo simple)
+  gateway/channels/telegram.py      (ejemplo real)
+  gateway/channels/whatsapp_business.py (skeleton)
+
+FORMA 1 (SIMPLE)
+----------------
+A) Implementar un ChannelAdapter nuevo en gateway/channels/
+B) Agregarlo al ensure_channel(...) en core/gateway.py
+
+FORMA 2 (MEJOR PARA ESCALAR)
+----------------------------
+A) Hacerlo como plugin:
+   - plugin registra el canal
+   - core lo descubre y lo instancia
+
+NOTA:
+Si hoy el core solo crea canales "hardcoded" con _ensure_channel,
+la extensión real por plugin requiere un hook para registrar canales.
+(Se puede agregar sin romper el core, pero hay que definir el contrato.)
+
+CHECKLIST CANAL
+---------------
+[ ] Identificador estable (ej: slack-1)
+[ ] start() / stop() con shutdown limpio
+[ ] reconexión si aplica
+[ ] rate limit (por user/canal)
+[ ] autenticación del canal (signatures, tokens)
+[ ] normalización inbound:
+     chat_id, sender_id, text, msg_id, ts
+[ ] envío outbound: send(chat_id, text, metadata)
+
+
+======================================================================
+5) AGREGAR INTEGRACIONES (APIs EXTERNAS)
+======================================================================
+
+CASO DE USO
+-----------
+Quieres que tools hablen con:
+  - CRM
+  - ERP
+  - DB corporativa
+  - APIs internas
+
+RECOMENDACION
+-------------
+Implementar integración como:
+  - Cliente Python aislado (acme_clients/)
+  - Usado por tools registradas en plugins
+
+GOOD PRACTICES
+--------------
+- Timeouts estrictos
+- Retries (solo idempotentes)
+- Circuit breaker (si falla externo)
+- Logs con run_id
+- No exponer secretos en logs/eventos
+
+
+======================================================================
+6) EXTENDER EL MOTOR DE AGENTE (OPCIONAL)
+======================================================================
+
+CASO DE USO
+-----------
+Quieres cambiar el runtime:
+  - Simple runner -> LangGraph engine
+  - o motor propio (planner/reflector/etc.)
+
+DONDE MIRAR
+-----------
+  gateway/agent/engine.py
+  gateway/agent/runner.py
+  gateway/agent/langgraph_engine.py
+  LANGGRAPH_IMPLEMENTATION.md
+
+PATRON
+------
+- Implementas una clase Engine que:
+  - recibe contexto + prompt
+  - ejecuta pasos
+  - emite eventos (progress/tool_call/output)
+  - respeta max_steps y timeout
+- Activación por config:
+  AGW_AGENT_ENGINE=simple|langgraph|custom
+
+
+======================================================================
+7) EXTENSION: EVENTOS Y AUDITORIA
+======================================================================
+
+OBJETIVO
+--------
+Que cada extensión sea observable y auditable.
+
+REGLA
+-----
+Cuando algo ocurra:
+  - tool call
+  - tool result
+  - bloqueo por policy
+  - approval requerido
+  - excepción externa
+
+Debe:
+  - Emitir evento
+  - Registrar log estructurado
+  - Incluir run_id y channel_id
+
+
+======================================================================
+8) PLANTILLA RAPIDA (PLUGIN LISTO)
+======================================================================
+
+Estructura:
+
+  plugins/my_plugin/
+    plugin.py
+
+Contenido mínimo (conceptual):
+
+  def register(registry):
+      registry.register_tool(...)
+
+Deploy:
+  - Copias carpeta a AGW_PLUGIN_DIR
+  - Reinicias zankora-gateway
+  - Verificas:
+      zankora doctor
+      zankora channels
+      zankora run <chat> --prompt "..."
+
+======================================================================
+
+```
+---
+---
 
 ## 📄 License
 
