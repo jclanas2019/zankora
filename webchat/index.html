@@ -1,0 +1,98 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Agent Gateway WebChat</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 20px; }
+    #log { border: 1px solid #ddd; padding: 10px; height: 360px; overflow: auto; white-space: pre-wrap; }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    input, textarea { width: 100%; }
+    button { padding: 8px 12px; }
+    .pill { display:inline-block; padding:2px 8px; border-radius: 999px; background:#f2f2f2; margin-left:6px; font-size:12px;}
+  </style>
+</head>
+<body>
+  <h2>Agent Gateway WebChat <span class="pill">WS RPC + events</span></h2>
+
+  <div class="row">
+    <label style="min-width:120px;">API Key</label>
+    <input id="apiKey" placeholder="AGW_CLIENT_KEY (required by default)"/>
+  </div>
+  <div class="row">
+    <label style="min-width:120px;">Chat ID</label>
+    <input id="chatId" value="chat_demo_1"/>
+    <label style="min-width:120px;">Channel ID</label>
+    <input id="channelId" value="webchat-1"/>
+  </div>
+
+  <div id="log"></div>
+
+  <div class="row">
+    <textarea id="prompt" rows="3" placeholder="Escribe tu mensaje. Tip: 'tool:core.echo {&quot;text&quot;:&quot;hi&quot;}'"></textarea>
+  </div>
+  <div class="row">
+    <button id="connectBtn">Connect</button>
+    <button id="runBtn" disabled>Run</button>
+    <button id="approveBtn" disabled>Approve pending</button>
+  </div>
+
+<script>
+let ws = null;
+let lastRunId = null;
+
+function log(line) {
+  const el = document.getElementById("log");
+  el.textContent += line + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+
+function mkReq(type, payload) {
+  return { type, id: crypto.randomUUID().replaceAll("-", ""), ts: new Date().toISOString(), payload: payload || {} };
+}
+
+document.getElementById("connectBtn").onclick = () => {
+  const key = document.getElementById("apiKey").value;
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => {
+    log("WS connected");
+    ws.send(JSON.stringify(mkReq("req:hello", {})));
+    document.getElementById("runBtn").disabled = false;
+  };
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    log(JSON.stringify(msg, null, 2));
+    if (msg.type === "res:agent.run" && msg.ok) {
+      lastRunId = msg.payload.run.run_id;
+    }
+    if (msg.type === "evt:run.tool_call" && msg.payload.approval_required) {
+      document.getElementById("approveBtn").disabled = false;
+      lastRunId = msg.payload.run_id;
+    }
+    if (msg.type === "evt:run.completed" && msg.payload.run_id === lastRunId) {
+      document.getElementById("approveBtn").disabled = true;
+    }
+  };
+  ws.onerror = (e) => log("WS error: " + e);
+  ws.onclose = () => log("WS closed");
+
+  // FastAPI WS auth expects x-api-key header; browsers can't set custom headers for WS.
+  // For local dev: set require_client_auth=false, or terminate WS behind a proxy that injects headers.
+  log("NOTE: Browser WS cannot send x-api-key header. For dev, set AGW_REQUIRE_CLIENT_AUTH=false.");
+};
+
+document.getElementById("runBtn").onclick = () => {
+  const chatId = document.getElementById("chatId").value;
+  const channelId = document.getElementById("channelId").value;
+  const prompt = document.getElementById("prompt").value;
+  ws.send(JSON.stringify(mkReq("req:agent.run", { chat_id: chatId, channel_id: channelId, requested_by: "web", prompt })));
+};
+
+document.getElementById("approveBtn").onclick = () => {
+  if (!lastRunId) return;
+  ws.send(JSON.stringify(mkReq("req:approval.grant", { run_id: lastRunId })));
+  document.getElementById("approveBtn").disabled = true;
+};
+</script>
+</body>
+</html>

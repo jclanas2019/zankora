@@ -1,0 +1,726 @@
+# 🚀 Zankora — Agent Gateway
+Production-Ready Multi-Channel AI Agent System
+
+<div align="center">
+
+![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Status](https://img.shields.io/badge/status-production--ready-brightgreen.svg)
+
+**Zankora is a unified, secure, and extensible gateway for AI agents, designed for real-world, enterprise-grade deployments.**
+
+</div>
+
+---
+
+## 🌟 What is Zankora?
+
+**Zankora** is a **centralized Agent Gateway** that orchestrates AI agents across multiple communication channels, enforces security and policy controls, and provides full observability over agent behavior.
+
+It is designed around a **Single Authority** principle: all state, decisions, approvals, and events flow through one core system, making agent behavior auditable, controllable, and production-safe.
+
+Zankora is ideal for:
+- Enterprise AI assistants
+- Multi-channel conversational agents
+- Tool-augmented LLM systems
+- Regulated or security-sensitive environments
+
+---
+
+## 🌟 Features
+
+### Core Capabilities
+- **🔌 Multi-Channel Support**: Telegram, WhatsApp Business, WebChat, extensible via plugins
+- **🎯 Single Authority Architecture**: Centralized state, policy, and run coordination
+- **🔄 Real-Time Control Plane**: WebSocket-based RPC with server-push events
+- **🧩 Plugin System**: Hot-load tools, channels, and integrations
+- **🛡️ Security by Default**: Allow-list policies, rate limits, approval workflows
+- **📊 Enterprise Observability**: Structured logs, Prometheus metrics, audit events
+- **💾 Persistent State**: SQLite (dev) / PostgreSQL (production)
+- **⚙️ Production Hardened**: Health checks, graceful shutdown, retries, circuit breakers
+
+### Advanced Features
+- Exponential backoff retries for transient failures
+- Circuit breaker protection for external services
+- Human-in-the-loop approval workflows
+- Multi-LLM support (Anthropic, OpenAI, Mock)
+- Token bucket rate limiting (per channel / user)
+- Distributed tracing via run_id propagation
+- Input validation and sanitization
+- Hot-reload plugin loading at startup
+
+---
+
+## 🏗️ Architecture
+
+Zankora separates **control**, **execution**, and **integration** concerns:
+
+```
+┌─────────────────────┐          ┌───────────────────┐
+│  CLI / UI (WS RPC)  │◄────────►│  WS Control Plane │
+└─────────────────────┘          │  (FastAPI WS)     │
+                                 └──────────┬────────┘
+                                            │
+                                            ▼
+                                 ┌───────────────────┐
+                                 │  Zankora Core     │
+                                 │  ────────────────│
+                                 │  • Channels       │
+                                 │  • Policies       │
+                                 │  • Agent Runs     │
+                                 │  • Plugins        │
+                                 └────┬─────┬────┬───┘
+                                      │     │    │
+                  Inbound Events      │     │    │  Tool Calls
+                                      │     │    ▼
+                                      │     │  ┌──────────────┐
+                                      │     │  │ Tool Registry│
+                                      │     │  │ + Plugins    │
+                                      │     │  └──────────────┘
+                                      │     │
+                                      ▼     ▼
+                              ┌──────────────────┐
+                              │  Event Bus       │
+                              │  (async pub/sub) │
+                              └────────┬─────────┘
+                                       │
+                                       ▼
+                          ┌──────────────────────────┐
+                          │  Subscribers             │
+                          │  • WS clients            │
+                          │  • Channel adapters      │
+                          │  • Audit logs            │
+                          └──────────────────────────┘
+```
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.11+
+- pip or uv
+
+### Installation
+
+```bash
+git clone <repository-url>
+cd zankora
+
+python -m venv .venv
+source .venv/bin/activate
+
+pip install -e .[all]
+```
+
+```
+======================================================================
+                         ZANKORA GATEWAY
+                    Command Line Reference
+======================================================================
+
+
+1) zankora-gateway
+------------------
+Servidor principal de Zankora.
+Levanta el Gateway (FastAPI + WebSocket Control Plane).
+
+USO:
+    zankora-gateway
+
+DESCRIPCION:
+    - Inicia el servidor HTTP + WebSocket
+    - Carga configuración desde variables de entorno (.env)
+    - Inicializa canales, plugins, políticas y persistencia
+
+NO ACEPTA SUBCOMANDOS
+
+VARIABLES DE ENTORNO COMUNES:
+    AGW_HOST
+    AGW_PORT
+    AGW_INSTANCE_ID
+    AGW_LOG_LEVEL
+    AGW_LOG_FORMAT
+    AGW_DATA_DIR
+    AGW_PLUGIN_DIR
+
+
+======================================================================
+
+
+2) zankora
+----------
+CLI de control para operar Zankora vía WebSocket RPC.
+Cliente del Control Plane.
+
+ALIAS:
+    zankora
+    agw                (alias legacy / corto)
+
+USO GENERAL:
+    zankora <comando> [opciones]
+
+
+COMANDOS DISPONIBLES
+-------------------
+
+1. doctor
+---------
+Ejecuta auditoría completa del sistema.
+
+USO:
+    zankora doctor
+
+DESCRIPCION:
+    - Verifica base de datos
+    - Verifica event bus
+    - Verifica canales
+    - Verifica plugins
+    - Verifica rate limiter
+    - Verifica lockfile
+
+
+2. channels
+-----------
+Lista los canales activos.
+
+USO:
+    zankora channels
+
+SALIDA TIPICA:
+    webchat-1     READY
+    telegram-1    READY
+    whatsapp-1    DISABLED
+
+
+3. chats
+--------
+Lista los chats conocidos.
+
+USO:
+    zankora chats
+    zankora chats --channel-id telegram-1
+
+OPCIONES:
+    --channel-id <id>
+
+
+4. run
+------
+Ejecuta un run de agente sobre un chat.
+
+USO:
+    zankora run <chat_id> --prompt "<texto>"
+
+EJEMPLO:
+    zankora run chat_demo_1 --prompt "Hola, ¿en qué me ayudas?"
+
+COMPORTAMIENTO:
+    - Crea run_id
+    - Ejecuta agente
+    - Emite eventos en tiempo real
+    - Puede requerir aprobación si usa write tools
+
+
+5. approve
+----------
+Aprueba una operación pendiente (human-in-the-loop).
+
+USO:
+    zankora approve <run_id>
+
+EJEMPLO:
+    zankora approve run_xyz123
+
+
+6. events
+---------
+Muestra eventos asociados a un run.
+
+USO:
+    zankora events <run_id>
+    zankora events <run_id> --after-seq <n>
+
+OPCIONES:
+    --after-seq <numero>
+
+
+7. config-get
+-------------
+Obtiene la configuración actual del gateway.
+
+USO:
+    zankora config-get
+
+
+8. config-set
+-------------
+Actualiza configuración dinámica.
+
+USO:
+    zankora config-set <opciones>
+
+EJEMPLOS:
+    zankora config-set --allowlist-json '{"telegram-1":["user123"]}'
+    zankora config-set --tool-allow-json '{"core.echo":true}'
+
+
+======================================================================
+
+
+OPCIONES GLOBALES (TODOS LOS COMANDOS)
+-------------------------------------
+
+    --host <host>        (default: 127.0.0.1)
+    --port <port>        (default: 8787)
+    --api-key <key>      (o variable de entorno AGW_CLIENT_KEY)
+
+
+EJEMPLO COMPLETO:
+    export AGW_CLIENT_KEY=devkey
+    zankora channels --host 127.0.0.1 --port 8787
+
+
+======================================================================
+
+NOTAS
+-----
+
+- zankora-gateway es el SERVIDOR
+- zankora es el CLIENTE (control plane)
+- Toda operación del CLI usa WebSocket RPC
+- El gateway es Single Authority: estado, política y eventos
+  viven exclusivamente en el servidor
+
+======================================================================
+
+```
+
+
+---
+
+## ⚙️ Configuration
+
+```bash
+cp .env.example .env
+```
+
+Example `.env`:
+
+```env
+AGW_HOST=127.0.0.1
+AGW_PORT=8787
+AGW_INSTANCE_ID=zankora-01
+
+AGW_REQUIRE_CLIENT_AUTH=true
+AGW_CLIENT_API_KEYS=["devkey","prodkey"]
+
+AGW_RATE_LIMIT_RPS=10
+AGW_RATE_LIMIT_BURST=20
+
+AGW_DATA_DIR=./data
+AGW_PLUGIN_DIR=./plugins
+
+AGW_LLM_PROVIDER=mock
+AGW_LOG_LEVEL=INFO
+AGW_LOG_FORMAT=json
+```
+
+---
+
+## ▶️ Running Zankora
+
+```bash
+python -m gateway
+```
+
+Endpoints:
+- **HTTP**: http://127.0.0.1:8787
+- **WebSocket**: ws://127.0.0.1:8787/ws
+- **Metrics**: /metrics
+- **Health**: /healthz
+
+---
+
+## 📡 WebSocket Control Plane
+
+Zankora uses a **request/response + event** protocol over WebSockets.
+
+### Authentication
+
+```json
+{
+  "type": "req:hello",
+  "id": "msg_001",
+  "payload": {
+    "client_key": "devkey"
+  }
+}
+```
+
+### Core Requests
+- `req:channels.list`
+- `req:chat.list`
+- `req:chat.messages`
+- `req:agent.run`
+- `req:runs.tail`
+- `req:config.get`
+- `req:config.set`
+- `req:doctor.audit`
+- `req:approval.grant`
+
+### Core Events
+- `evt:message.inbound`
+- `evt:run.progress`
+- `evt:run.tool_call`
+- `evt:run.output`
+- `evt:run.completed`
+- `evt:security.blocked`
+- `evt:approval.required`
+
+---
+
+## 🔌 Plugin Development
+
+Plugins extend Zankora without modifying core code.
+
+```python
+from gateway.plugins.registry import PluginRegistry
+from gateway.domain.models import ToolSpec, ToolPermission
+
+def register(registry: PluginRegistry):
+    registry.register_tool(
+        ToolSpec(
+            name="example.echo",
+            description="Echo input text",
+            permission=ToolPermission.read,
+            func=lambda text: {"echo": text},
+            parameters={
+                "text": {"type": "string"}
+            }
+        )
+    )
+```
+
+Plugins are loaded automatically from `AGW_PLUGIN_DIR`.
+
+---
+
+## 🔐 Security Model
+
+- **Deny-by-default** tool execution
+- **Rate limits** per channel and user
+- **Approval gates** for write tools
+- **Audit events** for all security decisions
+- **Client API key authentication**
+
+Zankora is designed to be safe to expose to real users.
+
+---
+
+## 📊 Observability
+
+### Metrics
+Exposed via Prometheus:
+- Agent runs
+- Tool calls
+- Blocked actions
+- Event throughput
+- Active connections
+
+### Logging
+- Structured JSON logs
+- Correlation via `run_id`
+- Suitable for ELK / Loki / Cloud logging
+
+### Health Checks
+
+```json
+{
+  "status": "healthy",
+  "checks": {
+    "database": "ok",
+    "event_bus": "ok",
+    "channels": "ready"
+  }
+}
+```
+
+---
+
+## 🏭 Deployment
+
+### Docker
+
+```bash
+docker build -t zankora:latest .
+docker run -p 8787:8787 zankora:latest
+```
+
+### Docker Compose
+
+```bash
+docker-compose up -d
+```
+
+Includes:
+- Zankora Gateway
+- PostgreSQL
+- Prometheus
+- Grafana
+- Nginx
+
+---
+
+## 🗺️ Roadmap
+
+- Redis-backed event bus
+- Horizontal scaling
+- Slack & Discord adapters
+- Admin dashboard
+- Multi-tenant isolation
+- Policy-as-code
+
+---
+```
+======================================================================
+                           ZANKORA
+                        USE CASES
+======================================================================
+
+
+1) AGENTE MULTICANAL EMPRESARIAL
+-------------------------------
+Un mismo agente operando de forma consistente en múltiples canales.
+
+CANALES:
+    - WebChat
+    - Telegram
+    - WhatsApp Business
+
+ZANKORA HACE:
+    - Normaliza mensajes entrantes
+    - Mantiene contexto por chat
+    - Aplica políticas por canal/usuario
+    - Centraliza estado y decisiones
+
+CASO REAL:
+    Un asistente corporativo responde igual en Web y Telegram,
+    con reglas de seguridad distintas por canal.
+
+
+======================================================================
+
+
+2) AI CON HERRAMIENTAS (TOOL-AUGMENTED LLM)
+------------------------------------------
+Agentes que ejecutan acciones reales vía tools.
+
+EJEMPLOS DE TOOLS:
+    - Consultar bases de datos
+    - Crear tickets
+    - Ejecutar workflows
+    - Llamar APIs internas
+
+ZANKORA HACE:
+    - Registro centralizado de tools
+    - Allow-list por nombre de tool
+    - Bloqueo por defecto
+    - Auditoría de cada ejecución
+
+CASO REAL:
+    Un agente que consulta datos, pero solo escribe
+    cuando la política lo permite.
+
+
+======================================================================
+
+
+3) HUMAN-IN-THE-LOOP / APROBACIONES
+----------------------------------
+Acciones sensibles requieren aprobación humana.
+
+CUANDO SE ACTIVA:
+    - Tools de tipo WRITE
+    - Operaciones de alto impacto
+    - Riesgo regulatorio
+
+ZANKORA HACE:
+    - Bloquea ejecución
+    - Emite evt:approval.required
+    - Espera aprobación vía CLI o UI
+    - Reanuda o cancela el run
+
+CASO REAL:
+    Un agente quiere borrar datos o enviar un correo externo.
+    Un operador debe aprobar explícitamente.
+
+
+======================================================================
+
+
+4) CONTROL PLANE DE AGENTES (OPERACIÓN)
+--------------------------------------
+Operar agentes como sistemas, no como scripts.
+
+OPERACIONES:
+    - Listar canales
+    - Inspeccionar chats
+    - Ejecutar runs manuales
+    - Ver eventos en tiempo real
+    - Auditar estado del sistema
+
+ZANKORA HACE:
+    - WebSocket RPC
+    - Eventos server-push
+    - Estado observable y reproducible
+
+CASO REAL:
+    Un SRE o Tech Lead monitorea y controla agentes
+    desde CLI o dashboard.
+
+
+======================================================================
+
+
+5) SEGURIDAD Y GOVERNANCE DE IA
+-------------------------------
+IA bajo reglas claras y auditables.
+
+ZANKORA HACE:
+    - Rate limiting por usuario/canal
+    - Deny-by-default
+    - Logs estructurados
+    - Event sourcing de decisiones
+
+CASO REAL:
+    Evitar abuso, prompt injection operacional,
+    o ejecuciones fuera de política.
+
+
+======================================================================
+
+
+6) ORQUESTADOR DE AGENTES (NO SOLO CHAT)
+---------------------------------------
+Zankora no es un chatbot, es un runtime.
+
+EJEMPLOS:
+    - Agentes batch
+    - Agentes reactivos a eventos
+    - Agentes con múltiples pasos
+    - Agentes con retries y timeouts
+
+ZANKORA HACE:
+    - Maneja run_id
+    - Aplica límites de pasos
+    - Maneja fallos y retries
+    - Emite progreso incremental
+
+CASO REAL:
+    Un agente que ejecuta 10 pasos con tools,
+    puede fallar, reintentarse y quedar auditado.
+
+
+======================================================================
+
+
+7) PLATAFORMA DE EXPERIMENTACIÓN CONTROLADA
+-------------------------------------------
+Probar agentes sin romper producción.
+
+ZANKORA HACE:
+    - Mock LLM provider
+    - Canales aislados
+    - Plugins hot-load
+    - Configuración dinámica
+
+CASO REAL:
+    Probar nuevas tools o prompts en un canal
+    sin afectar usuarios reales.
+
+
+======================================================================
+
+
+8) BACKEND PARA DASHBOARD / UI
+------------------------------
+Zankora como backend headless.
+
+CLIENTES:
+    - CLI
+    - Admin UI
+    - Web dashboard
+    - Integraciones internas
+
+ZANKORA HACE:
+    - API estable vía WebSocket
+    - Push de eventos
+    - Fuente única de verdad
+
+CASO REAL:
+    Un dashboard interno mostrando runs, bloqueos,
+    aprobaciones y métricas en tiempo real.
+
+
+======================================================================
+
+
+9) CUMPLIMIENTO Y AUDITORÍA
+---------------------------
+Preparado para entornos regulados.
+
+ZANKORA HACE:
+    - Logs inmutables de eventos
+    - Trazabilidad por run_id
+    - Historial de decisiones
+    - Separación control / ejecución
+
+CASO REAL:
+    Poder responder:
+        "¿Qué hizo este agente?"
+        "¿Quién lo aprobó?"
+        "¿Con qué datos?"
+        "¿Cuándo?"
+
+======================================================================
+
+
+RESUMEN RÁPIDO
+--------------
+Zankora sirve cuando necesitas:
+
+    - Agentes en producción (no demos)
+    - Control, seguridad y visibilidad
+    - Multi-canal real
+    - Tooling con gobernanza
+    - Human-in-the-loop
+    - Observabilidad completa
+
+SI NO NECESITAS ESTO:
+    - Un simple chatbot
+    - Un script local
+    - Un playground de prompts
+
+ENTONCES:
+    Zankora probablemente es demasiado.
+    Y eso está bien.
+
+======================================================================
+
+```
+---
+
+## 📄 License
+
+MIT License
+
+---
+
+<div align="center">
+
+**Zankora — Control your agents. Trust their behavior.**
+
+**Author: Juan Carlos Lanas Ocampo**
+
+</div>
