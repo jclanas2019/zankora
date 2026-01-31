@@ -1026,3 +1026,20 @@ MIT License
 **Author: Juan Carlos Lanas Ocampo**
 
 </div>
+<div align="center">  
+Zankora es llamada.
+
+Zankora nace cuando muchos caminos se cruzan
+y uno solo debe guiar.
+
+Es la voz que ordena al tambor,
+la mano que conoce el ritmo antes del golpe.
+
+En lengua antigua, Zankora es:
+“Aquel que abre paso para que otros hablen”
+Zankora camina delante del mensaje,
+escucha antes de responder,
+y no habla dos veces lo mismo.
+
+**Zankora escucha el mensaje entrante, lo normaliza, lo pasa por la ley (políticas), convoca herramientas bajo permiso, y canta la historia completa en eventos, logs y métricas.**
+</div>
