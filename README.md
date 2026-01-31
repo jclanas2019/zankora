@@ -64,7 +64,7 @@ Zankora separates **control**, **execution**, and **integration** concerns:
                                             ▼
                                  ┌───────────────────┐
                                  │  Zankora Core     │
-                                 │  ────────────────│
+                                 │  ──────────────── │
                                  │  • Channels       │
                                  │  • Policies       │
                                  │  • Agent Runs     │
