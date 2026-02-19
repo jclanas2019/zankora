@@ -18,6 +18,7 @@ from gateway.channels.whatsapp_business import WhatsAppBusinessChannel
 from gateway.tools.registry import ToolRegistry, builtins_registry
 from gateway.agent.runner import AgentRunner
 from gateway.agent.engine import AgentEngine
+from gateway.agent.llm import MockLLM, LLMAdapter
 from gateway.plugins.registry import PluginRegistry
 from gateway.plugins.loader import load_plugins
 from gateway.security.rate_limit import RateLimiter
@@ -27,6 +28,31 @@ log = get_logger("gateway")
 def gen_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
+def _create_llm_adapter(settings: Settings) -> LLMAdapter:
+    """Instantiate the LLM adapter based on AGW_LLM_ADAPTER setting."""
+    adapter = settings.llm_adapter.lower()
+
+    if adapter == "openai":
+        if not settings.openai_api_key:
+            raise RuntimeError(
+                "OpenAI adapter selected but AGW_OPENAI_API_KEY is not set. "
+                "Add it to your .env file or environment."
+            )
+        from gateway.agent.openai_llm import OpenAILLM
+        log.info("llm_adapter_selected", adapter="openai", model=settings.openai_model)
+        return OpenAILLM(
+            api_key=settings.openai_api_key,
+            model=settings.openai_model,
+            temperature=settings.openai_temperature,
+            max_tokens=settings.openai_max_tokens,
+            system_prompt=settings.openai_system_prompt or None,
+        )
+
+    # Default: MockLLM
+    log.info("llm_adapter_selected", adapter="mock")
+    return MockLLM()
+
+
 def _create_agent_engine(
     settings: Settings,
     bus: EventBus,
@@ -34,6 +60,8 @@ def _create_agent_engine(
     policy_engine: PolicyEngine,
 ) -> AgentEngine:
     """Create the appropriate agent engine based on settings."""
+    llm = _create_llm_adapter(settings)
+
     if settings.agent_engine == "langgraph":
         try:
             from gateway.agent.langgraph_engine import LangGraphEngine
@@ -42,6 +70,7 @@ def _create_agent_engine(
                 bus=bus,
                 tools=tools,
                 policy_engine=policy_engine,
+                llm=llm,
                 max_steps=settings.run_max_steps,
                 timeout_s=settings.run_timeout_s,
                 retry=settings.run_retry,
@@ -62,6 +91,7 @@ def _create_agent_engine(
             bus=bus,
             tools=tools,
             policy_engine=policy_engine,
+            llm=llm,
             max_steps=settings.run_max_steps,
             timeout_s=settings.run_timeout_s,
             retry=settings.run_retry,

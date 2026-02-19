@@ -39,7 +39,17 @@ class Settings(BaseSettings):
     json_logs: bool = Field(default=True)
 
     # LLM
-    llm_adapter: str = Field(default="mock", description="mock|openai|anthropic|local_http (only mock included).")
+    llm_adapter: str = Field(default="mock", description="mock|openai|anthropic|local_http.")
+
+    # OpenAI adapter settings (used when llm_adapter="openai")
+    openai_api_key: str = Field(default="", description="OpenAI API key (sk-...).")
+    openai_model: str = Field(default="gpt-4.1-mini", description="OpenAI model to use.")
+    openai_temperature: float = Field(default=0.2, description="Sampling temperature.")
+    openai_max_tokens: int = Field(default=1024, description="Max tokens in completion.")
+    openai_system_prompt: str = Field(
+        default="",
+        description="Custom system prompt for the OpenAI agent. Leave empty to use the default.",
+    )
 
 def load_settings() -> Settings:
     return Settings()
